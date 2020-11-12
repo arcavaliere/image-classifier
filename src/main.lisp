@@ -15,12 +15,11 @@
 (cl-interpol:enable-interpol-syntax)
 
 (defparameter *api-url* "http://gelbooru.me/index.php?")
-(defparameter *api-creds* (uiop:getenv "IC_API_CREDS"))
+(defparameter *api-creds* (uiop:getenv "IC_API_CREDS")) ; Hard code on Windows
 (defparameter *request-timeout* 300)
-(defparameter *picture-directory* (uiop:getenv "IC_PICTURE_ROOT"))
+(defparameter *picture-directory* (uiop:getenv "IC_PICTURE_ROOT")) ; Hard code on Windows
 
 (setf lparallel:*kernel* (lparallel:make-kernel 2))
-
 
 ;;; Data Acquisition Functions
 
@@ -71,8 +70,6 @@
               (handler-case (write-image-to-file image-data image-name image-extension tag-directory)
                 (JPEG:unsupported-jpeg-format (c)
                   (format t "Bad jpeg ~a~%" (gethash "file_url" table)))
-                (WINHTTP::win-error (e)
-                  (format t "~a~%" e))
                 (error (e)
                   (format t "~a~%" e))) 
               image-name))
