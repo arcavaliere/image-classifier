@@ -19,7 +19,10 @@
                 :components
                 ((:file "main"))))
   :description ""
-  :in-order-to ((test-op (test-op "image-classifier/tests"))))
+  :in-order-to ((test-op (test-op "image-classifier/tests")))
+  :build-operation "program-op"
+  :build-pathname "app"
+  :entry-point "image-classifier;main")
 
 (defsystem "image-classifier/tests"
   :author ""

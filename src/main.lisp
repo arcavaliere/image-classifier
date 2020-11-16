@@ -9,7 +9,7 @@
   (:import-from :snooze :defroute :http-condition :payload-as-string)
   (:import-from :lparallel :make-channel :*kernel* :make-kernel :submit-task :receive-result)
   (:import-from :qbase64 :decode-string)
-  (:export :start :stop :Image))
+  (:export :start :stop :main))
 (in-package :image-classifier)
 
 (cl-interpol:enable-interpol-syntax)
@@ -19,7 +19,6 @@
 (defparameter *request-timeout* 300)
 (defparameter *picture-directory* (uiop:getenv "IC_PICTURE_ROOT")) ; Hard code on Windows
 
-(setf lparallel:*kernel* (lparallel:make-kernel 2))
 
 ;;; Data Acquisition Functions
 
@@ -91,10 +90,28 @@
 
 (defun start (&key (port 5000))
   (stop)
-  (setq *handler* (clack:clackup (snooze:make-clack-app) :port port)))
+  (setq *handler* (clack:clackup (snooze:make-clack-app) :address "0.0.0.0" :port port)))
 
 (defun stop ()
   (when *handler* (clack:stop *handler*) (setq *handler* nil)))
+
+(defun main ()
+  ;(setf lparallel:*kernel* (lparallel:make-kernel 2))
+  (start)
+  (handler-case (bt:join-thread (find-if
+                   (lambda (th)
+                     (search "hunchentoot" (bt:thread-name th)))
+                   (bt:all-threads)))
+    (#+sbcl sb-sys:interactive-interrupt
+      #+ccl  ccl:interrupt-signal-condition
+      #+clisp system::simple-interrupt-condition
+      #+ecl ext:interactive-interrupt
+      #+allegro excl:interrupt-signal
+      () (progn
+           (format *error-output* "Aborting.~&")
+           (stop)
+           (uiop:quit)))
+    (error (c) (format t "Woops, an unknown error occured:~&~a~&" c))))
 
 ;; One route for triggering data acquisition
 (defroute download (:post "application/json")
@@ -110,22 +127,20 @@
 
 (defroute classify (:post "application/json")
   ""
-  (let ((json (handler-case
+  (let* ((json (handler-case
                   (parse (payload-as-string))
                 (error (e)
                   (http-condition 400 "Malformed JSON (~a)!" e))))
-        (channel (make-channel)))
-    (submit-task channel
-                 (lambda ()
-                   (let ((image (make-image :features '()
-                                            :data (opticl:read-image-stream
-                                                   (flexi-streams:make-in-memory-input-stream (decode-string (gethash "image" json)))
-                                                   (intern (string-upcase (gethash "type" json)) :keyword))
-                                            :filename (gethash "name" json))))
-                     (bin-features (extract-features (nearest-neighbors (gethash "k" json) image))))))
+         (image (make-image :features '()
+                             :data (opticl:read-image-stream
+                                    (flexi-streams:make-in-memory-input-stream (decode-string (gethash "image" json)))
+                                    (intern (string-upcase (gethash "type" json)) :keyword))
+                            :filename (gethash "name" json))))
     (with-output-to-string* (:stream-symbol out)
-      (encode-plist (alexandria:hash-table-plist (receive-result channel)) out))))
-
+        (encode-plist (alexandria:hash-table-plist
+                       (bin-features (extract-features (nearest-neighbors (gethash "k" json) image))))
+                      out))))
+    
 ;;; Image Classification (K-NN)
 
 ;; Image Struct
